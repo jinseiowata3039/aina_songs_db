@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <base target="_top">
+  <!-- Bootstrap 5 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body {
+      background-color: #f8f9fa;
+      font-family: sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .main-container { flex: 1; }
+    .card-custom { 
+      border-radius: 12px; 
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06); 
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .card-clickable { cursor: pointer; }
+    .card-clickable:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+    }
+    .header-banner { 
+      background: linear-gradient(135deg, #0d6efd, #0b5ed7); 
+      color: white; 
+      border-radius: 8px; 
+      padding: 15px 20px; 
+    }
+    .nav-pills .nav-link.active { background-color: #0d6efd; font-weight: bold; }
+    .song-order-badge { min-width: 80px; text-align: center; }
+
+    .rank-badge {
+      min-width: 45px;
+      height: 45px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 1.1rem;
+    }
+    .rank-1 { background-color: #ffe066; color: #856404; border: 2px solid #ffd43b; }
+    .rank-2 { background-color: #e9ecef; color: #495057; border: 2px solid #ced4da; }
+    .rank-3 { background-color: #f4a261; color: #fff; border: 2px solid #e76f51; }
+    .rank-other { background-color: #f1f3f5; color: #6c757d; }
+
+    .suggest-box {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      z-index: 1050;
+      max-height: 250px;
+      overflow-y: auto;
+      border-radius: 0 0 12px 12px;
+      box-shadow: 0 8px 16px rgba(0,0,0,0.15);
+      display: none;
+      background-color: #ffffff;
+    }
+    .suggest-item {
+      padding: 12px 16px;
+      cursor: pointer;
+      border-bottom: 1px solid #f0f0f0;
+      font-size: 15px;
+    }
+    .suggest-item:last-child { border-bottom: none; }
+    .suggest-item:active, .suggest-item:hover {
+      background-color: #e9ecef;
+      color: #0d6efd;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container my-4 main-container" style="max-width: 800px;">
+    <!-- ヘッダー -->
+    <div class="text-center mb-4">
+      <h2 class="fw-bold text-primary">鈴木愛奈さん 楽曲披露データベース</h2>
+      <p class="text-muted small">曲名・イベント・披露回数ランキングから検索できます</p>
+      <div id="lastUpdateText" class="text-muted small" style="display: none;"></div>
+    </div>
+
+    <!-- モード切り替えタブ -->
+    <ul class="nav nav-pills nav-justified mb-4 card-custom bg-white p-2" id="searchTab" role="tablist">
+      <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="song-tab" data-bs-toggle="pill" type="button" onclick="switchMode('song')">🎵 曲名から</button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="event-tab" data-bs-toggle="pill" type="button" onclick="switchMode('event')">🎤 イベントから</button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="rank-tab" data-bs-toggle="pill" type="button" onclick="switchMode('rank')">🏆 披露回数ランキング</button>
+      </li>
+    </ul>
+
+    <!-- 検索入力エリア -->
+    <div id="searchCard" class="card card-custom p-4 mb-4 bg-white overflow-visible">
+      <!-- 曲名選択用 -->
+      <div id="songSelectGroup" class="position-relative">
+        <label for="songInput" class="form-label fw-bold">曲名を入力または選択してください：</label>
+        <div class="input-group">
+          <input type="text" id="songInput" class="form-control form-control-lg" placeholder="タップして選択、またはキーワード入力..." oninput="handleSearchInput('song')" onfocus="handleSearchInput('song')" disabled>
+          <button class="btn btn-outline-secondary" type="button" onclick="clearInput('song')">✕</button>
+        </div>
+        <div id="songSuggestBox" class="suggest-box border"></div>
+      </div>
+
+      <!-- イベント選択用 -->
+      <div id="eventSelectGroup" class="position-relative" style="display: none;">
+        <label for="eventInput" class="form-label fw-bold">イベント名を入力または選択してください：</label>
+        <div class="input-group">
+          <input type="text" id="eventInput" class="form-control form-control-lg" placeholder="タップして選択、またはキーワード入力..." oninput="handleSearchInput('event')" onfocus="handleSearchInput('event')" disabled>
+          <button class="btn btn-outline-secondary" type="button" onclick="clearInput('event')">✕</button>
+        </div>
+        <div id="eventSuggestBox" class="suggest-box border"></div>
+      </div>
+    </div>
+
+    <!-- ローディング表示 -->
+    <div id="loading" class="text-center my-5">
+      <div class="spinner-border text-primary" role="status"></div>
+      <p class="mt-2 text-muted">スプレッドシートからデータを取得中...</p>
+    </div>
+
+    <!-- エラー表示用 -->
+    <div id="errorMessage" class="alert alert-danger my-4" style="display: none;"></div>
+
+    <!-- 結果表示エリア -->
+    <div id="resultArea" style="display: none;">
+      <div class="header-banner mb-3 d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2">
+        <div>
+          <div class="small opacity-75" id="headerSubTitle">📅 -</div>
+          <h4 class="mb-0 fw-bold" id="headerMainTitle">-</h4>
+        </div>
+        <div id="headerExtra" class="text-sm-end">
+          <span class="badge bg-light text-primary fs-6" id="headerBadge">-</span>
+        </div>
+      </div>
+      <div id="resultList" class="d-flex flex-column gap-2"></div>
+    </div>
+  </div>
+
+  <!-- フッター -->
+  <footer class="mt-auto py-3 bg-light text-center border-top">
+    <div class="container" style="max-width: 800px;">
+      <p class="text-muted small mb-2">
+        ※ 本ツールは一ファンが個人で作成した<strong>非公式のデータベース</strong>です。<br>
+        公式関係者様とは一切関係ありません。情報の正確性・完全性を保証するものではありません。
+      </p>
+      <div class="small">
+        <span class="text-muted">制作者・お問い合わせ: </span>
+        <a href="https://x.com/jinseiowata3039" target="_blank" rel="noopener noreferrer" class="text-decoration-none fw-bold">
+          @jinseiowata3039 🔗
+        </a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // --- 定数定義 ---
+    const CONFIG = {
+      SONG_START_ROW: 14,
+      SONG_COL: 1,
+      EVENT_START_COL: 2,
+      DATE_ROW: 9,
+      EVENT_NAME_ROW: 10,
+      URL_ROW: 11
+    };
+
+    const EVENT_ALIAS_MAP = {
+      'アニサマ': ['animelo summer live', 'アニメロサマーライブ', 'anisama'],
+      'アニマ': ['animax'],
+      'アニエラ': ['aniera'],
+      'リリイベ': ['発売記念', 'リリースイベント'],
+      'ファンミ': ['密会'],
+    };
+
+    // --- グローバル状態 ---
+    let rawData = [];
+    let dateMap = {};
+    let currentMode = 'song';
+    let songList = [];
+    let eventList = [];
+    let selectedSongRowIdx = null;
+    let selectedEventColIdx = null;
+
+    // --- ユーティリティ関数 ---
+    const escapeHtml = str => String(str || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+
+    const formatSongName = str => str ? String(str).replace(/w\//gi, 'with ') : '';
+
+    const kanaToHiragana = str => String(str || '').replace(/[\u30a1-\u30f6]/g, m => String.fromCharCode(m.charCodeAt(0) - 0x60));
+
+    const normalizeText = str => str ? kanaToHiragana(String(str).normalize('NFKC').toLowerCase()) : '';
+
+    const isOrderFormat = str => {
+      const s = String(str || '').trim().toLowerCase();
+      if (!s) return false;
+      return !isNaN(s) || s === 'ex' || /^(en|enc|w-en|w-enc)/.test(s);
+    };
+
+    const parseOrderForSort = str => {
+      const s = String(str || '').toLowerCase().trim();
+      if (!isNaN(s) && s !== '') return parseFloat(s);
+      if (s.includes('w-en') || s.includes('wアンコール')) return 2000;
+      if (s.includes('en') || s.includes('enc') || s.includes('アンコール')) return 1000;
+      return 9999;
+    };
+
+    // === 画面読み込み時の初期化処理 ===
+    window.onload = function() {
+      // ★先ほど取得したGASのWebアプリURLをここに貼り付けてください
+      const GAS_API_URL = 'https://script.google.com/macros/s/YOUR_DEPLOY_ID/exec';
+
+      const loadingMsg = document.getElementById('loadingMsg');
+      const searchContainer = document.getElementById('searchContainer');
+      const errorArea = document.getElementById('errorArea');
+
+      // fetchを使ってGASからデータ（JSON）を取得する
+      fetch(GAS_API_URL)
+        .then(response => {
+          if (!response.ok) {
+            throw new Error('ネットワーク応答が正常ではありませんでした (' + response.status + ')');
+          }
+          return response.json();
+        })
+        .then(data => {
+          // 取得成功時の処理
+          rawData = data;
+          initApp(); // アプリの初期化関数を実行
+          loadingMsg.style.display = 'none';
+          searchContainer.style.display = 'block';
+        })
+        .catch(err => {
+          // エラー発生時の処理
+          console.error('Data Fetch Error:', err);
+          loadingMsg.style.display = 'none';
+          errorArea.style.display = 'block';
+          document.getElementById('errorMessage').textContent = 'データの読み込みに失敗しました: ' + err.message;
+        });
+    };
+
+    function onDataLoaded(data) {
+      if (!data || data.length === 0) {
+        showError('シートにデータが見つかりませんでした。');
+        return;
+      }
+
+      rawData = data;
+      document.getElementById('loading').style.display = 'none';
+
+      displayLastUpdateDate();
+      buildDateMap();
+      prepareSearchLists();
+    }
+
+    function displayLastUpdateDate() {
+      const updateTextDiv = document.getElementById('lastUpdateText');
+      if (!updateTextDiv) return;
+
+      const updateVal = rawData[7]?.[1] ? String(rawData[7][1]).trim() : '';
+      if (updateVal) {
+        updateTextDiv.innerHTML = `<span class="badge bg-secondary-subtle text-secondary border">🔄 データベース最終更新日: ${escapeHtml(updateVal)}</span>`;
+        updateTextDiv.style.display = 'block';
+      }
+    }
+
+    function showError(msg) {
+      document.getElementById('loading').style.display = 'none';
+      const errDiv = document.getElementById('errorMessage');
+      errDiv.style.display = 'block';
+      errDiv.innerText = msg;
+    }
+
+    function buildDateMap() {
+      dateMap = {};
+      let lastValidDate = '';
+
+      if (rawData.length > CONFIG.DATE_ROW) {
+        const row = rawData[CONFIG.DATE_ROW];
+        for (let c = CONFIG.EVENT_START_COL; c < row.length; c++) {
+          const val = String(row[c] || '').trim();
+          if (val !== '') lastValidDate = val;
+          dateMap[c] = lastValidDate;
+        }
+      }
+    }
+
+    function prepareSearchLists() {
+      // 楽曲リストの作成
+      songList = [];
+      for (let r = CONFIG.SONG_START_ROW; r < rawData.length; r++) {
+        const row = rawData[r];
+        if (!row || row.length <= CONFIG.SONG_COL) break;
+        const songName = String(row[CONFIG.SONG_COL] || '').trim();
+        if (!songName) break;
+
+        songList.push({ name: formatSongName(songName), rowIdx: r });
+      }
+      document.getElementById('songInput').disabled = false;
+
+      // イベントリストの作成
+      eventList = [];
+      if (rawData.length > CONFIG.EVENT_NAME_ROW) {
+        const eventRow = rawData[CONFIG.EVENT_NAME_ROW];
+        for (let c = CONFIG.EVENT_START_COL; c < eventRow.length; c++) {
+          const eventName = String(eventRow[c] || '').trim();
+          if (eventName && !eventName.startsWith('http')) {
+            const date = dateMap[c] ? ` (${dateMap[c]})` : '';
+            eventList.push({ name: eventName + date, colIdx: c });
+          }
+        }
+      }
+      document.getElementById('eventInput').disabled = false;
+    }
+
+    // --- UI制御 & モード切り替え ---
+    function switchMode(mode) {
+      currentMode = mode;
+      hideSuggest('song');
+      hideSuggest('event');
+
+      const searchCard = document.getElementById('searchCard');
+      const songGroup = document.getElementById('songSelectGroup');
+      const eventGroup = document.getElementById('eventSelectGroup');
+
+      if (mode === 'rank') {
+        searchCard.style.display = 'none';
+        showRanking();
+      } else {
+        searchCard.style.display = 'block';
+        songGroup.style.display = mode === 'song' ? 'block' : 'none';
+        eventGroup.style.display = mode === 'event' ? 'block' : 'none';
+
+        if (mode === 'song' && selectedSongRowIdx !== null) {
+          showHistoryBySong(selectedSongRowIdx);
+        } else if (mode === 'event' && selectedEventColIdx !== null) {
+          showSetlistByEvent(selectedEventColIdx);
+        } else {
+          document.getElementById('resultArea').style.display = 'none';
+        }
+      }
+    }
+
+    function hideSuggest(type) {
+      document.getElementById(type === 'song' ? 'songSuggestBox' : 'eventSuggestBox').style.display = 'none';
+    }
+
+    function matchesEventName(eventName, keyword) {
+      const normEvent = normalizeText(eventName);
+      const normKey = normalizeText(keyword);
+
+      if (normEvent.includes(normKey)) return true;
+
+      return Object.entries(EVENT_ALIAS_MAP).some(([alias, fullNames]) => {
+        if (normalizeText(alias).includes(normKey)) {
+          return fullNames.some(fullName => normEvent.includes(normalizeText(fullName)));
+        }
+        return false;
+      });
+    }
+
+    function handleSearchInput(type) {
+      const input = document.getElementById(type === 'song' ? 'songInput' : 'eventInput');
+      renderSuggestBox(type, input.value);
+    }
+
+    function renderSuggestBox(type, queryText) {
+      const isSong = type === 'song';
+      const input = document.getElementById(isSong ? 'songInput' : 'eventInput');
+      const box = document.getElementById(isSong ? 'songSuggestBox' : 'eventSuggestBox');
+      const list = isSong ? songList : eventList;
+      
+      const normalizedKeyword = normalizeText(queryText).trim();
+      box.innerHTML = '';
+
+      const filtered = normalizedKeyword 
+        ? list.filter(item => isSong ? normalizeText(item.name).includes(normalizedKeyword) : matchesEventName(item.name, normalizedKeyword))
+        : list;
+
+      if (filtered.length === 0) {
+        box.innerHTML = '<div class="suggest-item text-muted">該当なし</div>';
+      } else {
+        const fragment = document.createDocumentFragment();
+        filtered.forEach(item => {
+          const div = document.createElement('div');
+          div.className = 'suggest-item';
+          div.textContent = item.name;
+          div.onclick = () => {
+            input.value = item.name;
+            box.style.display = 'none';
+            if (isSong) {
+              selectedSongRowIdx = item.rowIdx;
+              showHistoryBySong(item.rowIdx);
+            } else {
+              selectedEventColIdx = item.colIdx;
+              showSetlistByEvent(item.colIdx);
+            }
+          };
+          fragment.appendChild(div);
+        });
+        box.appendChild(fragment);
+      }
+
+      box.style.display = 'block';
+    }
+
+    function clearInput(type) {
+      const isSong = type === 'song';
+      document.getElementById(isSong ? 'songInput' : 'eventInput').value = '';
+      if (isSong) selectedSongRowIdx = null;
+      else selectedEventColIdx = null;
+
+      document.getElementById('resultArea').style.display = 'none';
+      renderSuggestBox(type, '');
+    }
+
+    function getSongUrlFromRow(row) {
+      if (!row) return '';
+      for (let c = row.length - 1; c > CONFIG.SONG_COL; c--) {
+        const val = String(row[c] || '').trim();
+        if (val.startsWith('http')) return val;
+      }
+      return '';
+    }
+
+    // --- 画面遷移用ジャンプ関数 ---
+    function jumpToEvent(colIdx, fullName) {
+      new bootstrap.Tab(document.getElementById('event-tab')).show();
+      switchMode('event');
+      selectedEventColIdx = colIdx;
+      document.getElementById('eventInput').value = fullName || '';
+      showSetlistByEvent(colIdx);
+    }
+
+    function jumpToSong(rowIdx, fullName) {
+      new bootstrap.Tab(document.getElementById('song-tab')).show();
+      switchMode('song');
+      selectedSongRowIdx = rowIdx;
+      document.getElementById('songInput').value = fullName || '';
+      showHistoryBySong(rowIdx);
+    }
+
+    // --- 各モードの表示ロジック ---
+    // 1. 楽曲披露履歴表示（曲名指定時）
+    function showHistoryBySong(songRowIdx) {
+      const resultArea = document.getElementById('resultArea');
+      const resultList = document.getElementById('resultList');
+      const headerSubTitle = document.getElementById('headerSubTitle');
+
+      if (isNaN(songRowIdx) || !rawData[songRowIdx]) {
+        resultArea.style.display = 'none';
+        return;
+      }
+
+      try {
+        const songRow = rawData[songRowIdx];
+        const songName = String(songRow[CONFIG.SONG_COL] || '').trim();
+        const songUrl = getSongUrlFromRow(songRow);
+
+        resultList.innerHTML = '';
+        let totalPerformCount = 0;
+        const fragment = document.createDocumentFragment();
+
+        for (let c = CONFIG.EVENT_START_COL; c < songRow.length; c++) {
+          const cellVal = String(songRow[c] || '').trim();
+          if (!cellVal || cellVal.startsWith('http')) continue;
+
+          const eventName = String(rawData[CONFIG.EVENT_NAME_ROW]?.[c] || '').trim();
+          const date = dateMap[c] || '日付不明';
+          const url = String(rawData[CONFIG.URL_ROW]?.[c] || '').trim();
+
+          if (!eventName || eventName.startsWith('http')) continue;
+
+          const formattedCellVal = formatSongName(cellVal);
+          const performItems = cellVal.split(/[,，]/).map(s => s.trim()).filter(Boolean);
+          totalPerformCount += performItems.length > 0 ? performItems.length : 1;
+
+          const fullEventDisplayName = eventName + (date ? ` (${date})` : '');
+
+          const card = document.createElement('div');
+          card.className = 'card card-custom card-clickable p-3 bg-white d-flex flex-column gap-2';
+          card.onclick = () => jumpToEvent(c, fullEventDisplayName);
+
+          const urlBtn = (url && url.startsWith('http'))
+            ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="btn btn-outline-primary btn-sm ms-auto fw-bold" onclick="event.stopPropagation();">イベント詳細 🔗</a>`
+            : '';
+
+          card.innerHTML = `
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+              <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-secondary fs-7">📅 ${escapeHtml(date)}</span>
+                <span class="badge bg-info-subtle text-dark border fs-7">披露順: ${escapeHtml(formattedCellVal)}</span>
+              </div>
+              ${urlBtn}
+            </div>
+            <div class="d-flex justify-content-between align-items-center">
+              <div class="fw-bold fs-6 text-dark mt-1">${escapeHtml(eventName)}</div>
+              <span class="text-muted small">セトリを見る ➔</span>
+            </div>`;
+          
+          fragment.appendChild(card);
+        }
+
+        resultList.appendChild(fragment);
+
+        // 楽曲披露履歴ではヘッダー上の日付表示を完全に非表示化
+        headerSubTitle.textContent = '';
+        headerSubTitle.style.display = 'none';
+
+        document.getElementById('headerMainTitle').textContent = formatSongName(songName);
+
+        let headerExtraHtml = `<span class="badge bg-light text-primary fs-6 me-2">披露回数: ${totalPerformCount} 回</span>`;
+        if (songUrl && songUrl.startsWith('http')) {
+          headerExtraHtml += `<a href="${escapeHtml(songUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-light btn-sm text-primary fw-bold ms-1">再生 🔗</a>`;
+        }
+
+        document.getElementById('headerExtra').innerHTML = headerExtraHtml;
+        resultArea.style.display = 'block';
+
+        if (totalPerformCount === 0) {
+          resultList.innerHTML = '<div class="p-3 text-muted text-center">この曲の披露実績データがありません</div>';
+        }
+
+      } catch (err) {
+        console.error('showHistoryBySong Error:', err);
+        resultArea.style.display = 'block';
+        resultList.innerHTML = `<div class="p-3 text-danger bg-light border border-danger rounded"><strong>⚠️ エラーが発生しました:</strong><br>${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    // 2. イベントセットリスト表示（イベント指定時）
+    function showSetlistByEvent(colIdx) {
+      const resultArea = document.getElementById('resultArea');
+      const resultList = document.getElementById('resultList');
+      const headerSubTitle = document.getElementById('headerSubTitle');
+
+      if (isNaN(colIdx)) {
+        resultArea.style.display = 'none';
+        return;
+      }
+
+      resultList.innerHTML = '';
+
+      const eventName = String(rawData[CONFIG.EVENT_NAME_ROW]?.[colIdx] || '').trim();
+      const date = dateMap[colIdx] || '日付不明';
+      const url = String(rawData[CONFIG.URL_ROW]?.[colIdx] || '').trim();
+
+      const eventNotes = [];
+      const setlist = [];
+
+      // パス1: 単純な順序指定の解析
+      for (let r = CONFIG.SONG_START_ROW; r < rawData.length; r++) {
+        const row = rawData[r];
+        if (!row) continue;
+        const defaultSongName = String(row[CONFIG.SONG_COL] || '').trim();
+        const cellVal = String(row[colIdx] || '').trim();
+        const songUrl = getSongUrlFromRow(row);
+
+        if (!defaultSongName || !cellVal) continue;
+
+        const lines = cellVal.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+        lines.forEach(line => {
+          if (!line.includes(':') && !line.includes('：')) {
+            const orders = line.split(/[,，]/).map(s => s.trim()).filter(Boolean);
+            orders.forEach(ord => {
+              if (isOrderFormat(ord)) {
+                setlist.push({
+                  songName: defaultSongName,
+                  orderStr: ord,
+                  sortKey: parseOrderForSort(ord),
+                  songUrl: songUrl,
+                  songRowIdx: r,
+                  notes: []
+                });
+              }
+            });
+          }
+        });
+      }
+
+      // パス2: コロン付き（特殊曲名・備考）の解析
+      for (let r = CONFIG.SONG_START_ROW; r < rawData.length; r++) {
+        const row = rawData[r];
+        if (!row) continue;
+        const cellVal = String(row[colIdx] || '').trim();
+        const songUrl = getSongUrlFromRow(row);
+
+        if (!cellVal) continue;
+
+        const lines = cellVal.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+        lines.forEach(line => {
+          const colonIndex = line.search(/[:：]/);
+          if (colonIndex === -1) {
+            const parts = line.split(/[,，]/).map(s => s.trim()).filter(Boolean);
+            if (!parts.some(isOrderFormat) && !eventNotes.includes(line)) {
+              eventNotes.push(line);
+            }
+            return;
+          }
+
+          const prefixStr = line.substring(0, colonIndex).trim();
+          const contentStr = line.substring(colonIndex + 1).trim();
+          const orders = prefixStr.split(/[,，]/).map(s => s.trim()).filter(Boolean);
+
+          orders.forEach(ord => {
+            if (ord.toLowerCase() === 'ex') {
+              setlist.push({
+                songName: contentStr || 'ex',
+                orderStr: 'ex',
+                sortKey: parseOrderForSort('ex'),
+                songUrl: songUrl,
+                songRowIdx: null, // 明示的にnull
+                notes: []
+              });
+              return;
+            }
+
+            const targetSong = setlist.find(item => item.orderStr === ord);
+            if (targetSong) {
+              if (!targetSong.songUrl && songUrl) targetSong.songUrl = songUrl;
+              if (contentStr && !targetSong.notes.includes(contentStr)) {
+                targetSong.notes.push(contentStr);
+              }
+            } else if (contentStr) {
+              setlist.push({
+                songName: contentStr,
+                orderStr: ord,
+                sortKey: parseOrderForSort(ord),
+                songUrl: songUrl,
+                songRowIdx: null, // 特殊指定の楽曲は標準で履歴なし
+                notes: []
+              });
+            }
+          });
+        });
+      }
+
+      setlist.sort((a, b) => a.sortKey - b.sortKey);
+
+      const fragment = document.createDocumentFragment();
+      setlist.forEach(item => {
+        const formattedSongName = formatSongName(item.songName);
+
+        // 曲名リストに一致する楽曲があるかチェック
+        const targetSongObj = songList.find(s => normalizeText(s.name) === normalizeText(formattedSongName));
+        const targetRowIdx = targetSongObj ? targetSongObj.rowIdx : null;
+        const hasHistory = targetRowIdx !== null; // 履歴が存在するかどうか
+
+        let isFirstPerformance = false;
+        if (hasHistory) {
+          const songRow = rawData[targetRowIdx];
+          let hasPlayedBefore = false;
+
+          for (let c = CONFIG.EVENT_START_COL; c < colIdx; c++) {
+            const cellVal = String(songRow[c] || '').trim();
+            if (cellVal && !cellVal.startsWith('http')) {
+              hasPlayedBefore = true;
+              break;
+            }
+          }
+          if (!hasPlayedBefore) isFirstPerformance = true;
+        }
+
+        const card = document.createElement('div');
+        // 履歴が存在する場合のみ 'card-clickable' クラスを付与
+        card.className = `card card-custom ${hasHistory ? 'card-clickable' : ''} p-3 bg-white d-flex flex-row align-items-center justify-content-between gap-3`;
+        
+        // 履歴が存在する場合のみクリックイベントを登録
+        if (hasHistory) {
+          card.onclick = () => jumpToSong(targetRowIdx, formattedSongName);
+        }
+
+        const firstBadgeHtml = isFirstPerformance ? '<span class="badge bg-danger fs-7 ms-2">初披露</span>' : '';
+        const notesHtml = item.notes.map(note => `<span class="badge bg-secondary-subtle text-secondary border fs-7 ms-2">${escapeHtml(formatSongName(note))}</span>`).join('');
+        const urlBtnHtml = (item.songUrl && item.songUrl.startsWith('http'))
+          ? `<a href="${escapeHtml(item.songUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-outline-primary btn-sm rounded-pill px-3 ms-auto text-nowrap" onclick="event.stopPropagation();">再生 🔗</a>`
+          : '';
+
+        // 履歴が存在する場合のみ「履歴 ➔」を表示
+        const historyGuideHtml = hasHistory ? '<span class="text-muted small d-none d-sm-inline">披露履歴を見る ➔</span>' : '';
+
+        card.innerHTML = `
+          <div class="d-flex align-items-center gap-3 flex-wrap flex-grow-1">
+            <span class="badge bg-primary fs-6 song-order-badge p-2">${escapeHtml(item.orderStr)}</span>
+            <div class="fw-bold fs-6 text-dark">
+              ${escapeHtml(formattedSongName)}${firstBadgeHtml}${notesHtml}
+            </div>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            ${historyGuideHtml}
+            ${urlBtnHtml}
+          </div>`;
+        fragment.appendChild(card);
+      });
+
+      resultList.appendChild(fragment);
+
+      // イベントセットリスト表示では日付を表示する
+      headerSubTitle.style.display = 'block';
+      headerSubTitle.textContent = '📅 ' + date;
+
+      document.getElementById('headerMainTitle').textContent = eventName;
+
+      let headerExtraHtml = `<span class="badge bg-light text-primary fs-6 me-2">全 ${setlist.length} 曲</span>`;
+      eventNotes.forEach(note => {
+        headerExtraHtml += `<span class="badge bg-info-subtle text-dark fs-6 me-2">${escapeHtml(note)}</span>`;
+      });
+
+      if (url && url.startsWith('http')) {
+        headerExtraHtml += `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="btn btn-light btn-sm text-primary fw-bold ms-1">イベント詳細 🔗</a>`;
+      }
+      document.getElementById('headerExtra').innerHTML = headerExtraHtml;
+      resultArea.style.display = 'block';
+
+      if (setlist.length === 0) {
+        resultList.innerHTML = '<div class="p-3 text-muted text-center">このイベントのセットリストデータがありません</div>';
+      }
+    }
+
+    // 3. ランキング表示
+    function showRanking() {
+      const resultArea = document.getElementById('resultArea');
+      const resultList = document.getElementById('resultList');
+      const headerSubTitle = document.getElementById('headerSubTitle');
+
+      resultList.innerHTML = '';
+      const rankingData = [];
+
+      for (let r = CONFIG.SONG_START_ROW; r < rawData.length; r++) {
+        const row = rawData[r];
+        if (!row || row.length <= CONFIG.SONG_COL) break;
+
+        const songName = String(row[CONFIG.SONG_COL] || '').trim();
+        if (!songName) break;
+
+        let count = 0;
+        for (let c = CONFIG.EVENT_START_COL; c < row.length; c++) {
+          const cellVal = String(row[c] || '').trim();
+          if (!cellVal || cellVal.startsWith('http')) continue;
+
+          const eventName = String(rawData[CONFIG.EVENT_NAME_ROW]?.[c] || '').trim();
+          if (!eventName || eventName.startsWith('http')) continue;
+
+          const performItems = cellVal.split(/[,，]/).map(s => s.trim()).filter(Boolean);
+          count += performItems.length > 0 ? performItems.length : 1;
+        }
+
+        rankingData.push({
+          songName: formatSongName(songName),
+          count: count,
+          rowIdx: r,
+          songUrl: getSongUrlFromRow(row)
+        });
+      }
+
+      rankingData.sort((a, b) => b.count - a.count);
+
+      let currentRank = 0;
+      let prevCount = -1;
+      const fragment = document.createDocumentFragment();
+
+      rankingData.forEach((item, index) => {
+        if (item.count !== prevCount) {
+          currentRank = index + 1;
+          prevCount = item.count;
+        }
+
+        let rankBadgeClass = 'rank-other';
+        let rankDisplay = String(currentRank);
+
+        if (currentRank === 1) { rankBadgeClass = 'rank-1'; rankDisplay = '🥇'; }
+        else if (currentRank === 2) { rankBadgeClass = 'rank-2'; rankDisplay = '🥈'; }
+        else if (currentRank === 3) { rankBadgeClass = 'rank-3'; rankDisplay = '🥉'; }
+
+        const card = document.createElement('div');
+        card.className = 'card card-custom card-clickable p-3 bg-white d-flex flex-row align-items-center justify-content-between gap-3';
+        card.onclick = () => jumpToSong(item.rowIdx, item.songName);
+
+        const urlBtnHtml = (item.songUrl && item.songUrl.startsWith('http'))
+          ? `<a href="${escapeHtml(item.songUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-outline-primary btn-sm rounded-pill px-3 text-nowrap" onclick="event.stopPropagation();">再生 🔗</a>`
+          : '';
+
+        card.innerHTML = `
+          <div class="d-flex align-items-center gap-3 flex-grow-1 overflow-hidden">
+            <div class="rank-badge ${rankBadgeClass} flex-shrink-0">${rankDisplay}</div>
+            <div class="overflow-hidden">
+              <div class="fw-bold fs-6 text-dark text-truncate">${escapeHtml(item.songName)}</div>
+              <div class="text-muted small">披露履歴を見る ➔</div>
+            </div>
+          </div>
+          <div class="d-flex align-items-center gap-2 flex-shrink-0">
+            <span class="badge bg-primary fs-6 p-2">${item.count} 回</span>
+            ${urlBtnHtml}
+          </div>`;
+
+        fragment.appendChild(card);
+      });
+
+      resultList.appendChild(fragment);
+
+      // ランキング表示時のサブタイトル設定
+      headerSubTitle.style.display = 'block';
+      headerSubTitle.textContent = '📊 データベース全曲集計';
+
+      document.getElementById('headerMainTitle').textContent = '全楽曲 披露回数ランキング';
+      document.getElementById('headerExtra').innerHTML = `<span class="badge bg-light text-primary fs-6">対象: ${rankingData.length} 曲</span>`;
+
+      resultArea.style.display = 'block';
+    }
+  </script>
+  <!-- Bootstrap 5 JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
