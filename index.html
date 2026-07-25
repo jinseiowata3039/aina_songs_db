@@ -219,9 +219,8 @@
     window.onload = function() {
       const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbzoYY1hTW74sx17WSDrKS_jP1Uw3vasPU4kC5rLF4taUW1R2yYP1zn9WrdE9nuLhppu/exec';
 
-      const loadingMsg = document.getElementById('loadingMsg');
-      const searchContainer = document.getElementById('searchContainer');
-      const errorArea = document.getElementById('errorArea');
+      const loadingEl = document.getElementById('loading');
+      const errorEl = document.getElementById('errorMessage');
 
       // fetchを使ってGASからデータ（JSON）を取得する
       fetch(GAS_API_URL)
@@ -233,17 +232,16 @@
         })
         .then(data => {
           // 取得成功時の処理
-          rawData = data;
-          initApp(); // アプリの初期化関数を実行
-          loadingMsg.style.display = 'none';
-          searchContainer.style.display = 'block';
+          onDataLoaded(data);
         })
         .catch(err => {
           // エラー発生時の処理
           console.error('Data Fetch Error:', err);
-          loadingMsg.style.display = 'none';
-          errorArea.style.display = 'block';
-          document.getElementById('errorMessage').textContent = 'データの読み込みに失敗しました: ' + err.message;
+          if (loadingEl) loadingEl.style.display = 'none';
+          if (errorEl) {
+            errorEl.style.display = 'block';
+            errorEl.textContent = 'データの読み込みに失敗しました: ' + err.message;
+          }
         });
     };
 
